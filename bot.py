@@ -8,6 +8,7 @@ import sys
 
 import pytz
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -22,7 +23,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=config.TELEGRAM_BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+bot = Bot(
+    token=config.TELEGRAM_BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+)
 dp = Dispatcher()
 
 
