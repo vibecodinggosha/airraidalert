@@ -1,7 +1,9 @@
-telethon==1.36.0
-aiogram==3.13.1
-anthropic==0.40.0
-apscheduler==3.10.4
-pytz==2024.2
-python-dotenv==1.0.1
-aiohttp==3.11.10
+telethon>=1.36.0
+aiogram>=3.13.0
+anthropic>=0.40.0
+apscheduler>=3.10.0
+pytz>=2024.1
+python-dotenv>=1.0.0
+aiohttp>=3.9.0
+aiofiles>=23.2.1
+httpx>=0.27.0
