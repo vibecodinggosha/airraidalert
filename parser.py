@@ -1,88 +1,77 @@
-"""
-Parses recent messages from Telegram channels using Telethon.
-"""
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
-
-from telethon import TelegramClient
-from telethon.tl.types import Message
-
-import config
+import aiohttp
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+CHANNELS = ["DIUkraine", "kpszsu", "war_monitor"]
 
-def _is_shelling_related(text: str) -> bool:
-    """Quick pre-filter: keep only messages related to air threats or shelling."""
+KEYWORDS = [
+    "obstril", "raket", "udar", "atak", "dron", "shahed",
+    "vybuh", "zahoza", "tryvoh", "pusk", "pvo", "perekhoplen",
+    "missile", "attack", "drone", "alert", "explosion", "launch",
+    "balistych", "krylat", "kindzhal", "kalibr", "iskander",
+    "zenitn", "artiler", "naloт", "vidbii",
+    "обстріл", "ракет", "удар", "атак", "дрон", "шахед",
+    "вибух", "загроза", "тривог", "пуск", "пво", "перехоплен",
+    "балістич", "крилат", "кінджал", "калібр", "іскандер",
+    "повітряна тривога", "відбій", "налот", "зенітн", "артилер",
+]
+
+
+def _is_relevant(text):
     if not text:
         return False
-    keywords = [
-        "обстріл", "ракет", "удар", "атак", "дрон", "шахед", "shahed",
-        "вибух", "загроза", "тривог", "пуск", "пво", "перехоплен",
-        "missile", "attack", "drone", "alert", "explosion", "launch",
-        "балістич", "крилат", "кінджал", "калібр", "іскандер",
-        "повітряна тривога", "відбій", "налот", "бомбардув",
-        "зенітн", "мінометн", "артилер", "обстрілян",
-    ]
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in keywords)
+    t = text.lower()
+    return any(kw in t for kw in KEYWORDS)
 
 
-async def fetch_channel_messages(
-    client: TelegramClient,
-    channel: str,
-    since: datetime,
-    limit: int = 200,
-) -> list[dict]:
-    """Fetch messages from a single channel since the given UTC datetime."""
+async def fetch_channel(session, channel, since):
+    base = "https" + "://t.me/s/"
+    url = base + channel
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; bot)"}
     results = []
     try:
-        entity = await client.get_entity(channel)
-        async for msg in client.iter_messages(entity, limit=limit):
-            if not isinstance(msg, Message):
+        async with session.get(
+            url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            html = await resp.text()
+        soup = BeautifulSoup(html, "html.parser")
+        for msg in soup.select(".tgme_widget_message"):
+            time_tag = msg.select_one("time")
+            text_tag = msg.select_one(".tgme_widget_message_text")
+            if not time_tag or not text_tag:
                 continue
-            if msg.date < since:
-                break
-            text = msg.text or msg.message or ""
-            if not _is_shelling_related(text):
+            dt_str = time_tag.get("datetime", "").replace("Z", "+00:00")
+            try:
+                dt = datetime.fromisoformat(dt_str)
+            except Exception:
+                continue
+            if dt < since:
+                continue
+            text = text_tag.get_text(" ", strip=True)
+            if not _is_relevant(text):
                 continue
             results.append({
                 "channel": channel,
-                "id": msg.id,
-                "date": msg.date.isoformat(),
+                "date": dt.isoformat(),
                 "text": text[:2000],
             })
-    except Exception as exc:
-        logger.warning("Failed to fetch from %s: %s", channel, exc)
+    except Exception as e:
+        logger.warning("Failed %s: %s", channel, e)
     return results
 
 
-async def collect_recent_messages(hours: int = 20) -> list[dict]:
-    """
-    Connect to Telegram, scrape SOURCE_CHANNELS for the last `hours` hours,
-    return filtered list of shelling-related messages sorted oldest-first.
-    """
+async def collect_recent_messages(hours=20):
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    client = TelegramClient(
-        config.SESSION_NAME,
-        config.TELEGRAM_API_ID,
-        config.TELEGRAM_API_HASH,
-    )
-    all_messages: list[dict] = []
-    try:
-        await client.start()
-        tasks = [
-            fetch_channel_messages(client, ch, since)
-            for ch in config.SOURCE_CHANNELS
-        ]
+    all_messages = []
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_channel(session, ch, since) for ch in CHANNELS]
         results = await asyncio.gather(*tasks)
         for msgs in results:
             all_messages.extend(msgs)
-    finally:
-        await client.disconnect()
-
     all_messages.sort(key=lambda m: m["date"])
-    logger.info("Collected %d shelling-related messages", len(all_messages))
+    logger.info("Collected %d messages", len(all_messages))
     return all_messages
