@@ -1,7 +1,3 @@
-"""
-Main entry point: sets up the aiogram bot, APScheduler, and Telethon parser.
-Runs a nightly analytics job at ANALYTICS_HOUR:ANALYTICS_MINUTE Kyiv time.
-"""
 import asyncio
 import logging
 import sys
@@ -13,7 +9,14 @@ from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
-from analyzer import analyze_shelling_risk, format_report
+from analyzer import (
+    analyze_morning_verification,
+    analyze_shelling_risk,
+    format_morning_report,
+    format_report,
+    load_forecast,
+    save_forecast,
+)
 from parser import collect_recent_messages
 
 logging.basicConfig(
@@ -31,20 +34,35 @@ dp = Dispatcher()
 
 
 async def run_analytics_job() -> None:
-    """Collect messages, analyse with Claude, post report to the output channel."""
-    logger.info("Starting analytics job")
+    """Nightly job: collect messages, analyse, post report, save forecast."""
+    logger.info("Starting nightly analytics job")
     try:
         messages = await collect_recent_messages(hours=config.MESSAGES_LOOKBACK_HOURS)
         analysis = await analyze_shelling_risk(messages)
+        save_forecast(analysis)
         report = format_report(analysis, len(messages))
-        await bot.send_message(
-            chat_id=config.OUTPUT_CHANNEL_ID,
-            text=report,
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        logger.info("Analytics report posted successfully")
+        await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
+        logger.info("Nightly report posted successfully")
     except Exception:
-        logger.exception("Analytics job failed")
+        logger.exception("Nightly analytics job failed")
+
+
+async def run_morning_job() -> None:
+    """Morning job: verify if last night's forecast was correct."""
+    logger.info("Starting morning verification job")
+    try:
+        forecast = load_forecast()
+        if not forecast:
+            logger.warning("No forecast found, skipping morning verification")
+            return
+        # Collect overnight messages (last 10 hours)
+        messages = await collect_recent_messages(hours=10)
+        verification = await analyze_morning_verification(messages, forecast)
+        report = format_morning_report(verification, forecast, len(messages))
+        await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
+        logger.info("Morning verification posted successfully")
+    except Exception:
+        logger.exception("Morning verification job failed")
 
 
 def setup_scheduler() -> AsyncIOScheduler:
@@ -58,23 +76,32 @@ def setup_scheduler() -> AsyncIOScheduler:
         id="nightly_analytics",
         name="Nightly shelling analytics",
     )
+    scheduler.add_job(
+        run_morning_job,
+        trigger="cron",
+        hour=config.MORNING_HOUR,
+        minute=config.MORNING_MINUTE,
+        id="morning_verification",
+        name="Morning forecast verification",
+    )
     return scheduler
 
 
 async def main() -> None:
     logger.info(
-        "Bot starting. Analytics scheduled at %02d:%02d Kyiv time",
+        "Bot starting. Nightly at %02d:%02d, Morning check at %02d:%02d Kyiv time",
         config.ANALYTICS_HOUR,
         config.ANALYTICS_MINUTE,
+        config.MORNING_HOUR,
+        config.MORNING_MINUTE,
     )
-
     scheduler = setup_scheduler()
     scheduler.start()
 
-    # Run once immediately on startup if --now flag passed
     if "--now" in sys.argv:
-        logger.info("--now flag detected, running analytics immediately")
         await run_analytics_job()
+    if "--morning" in sys.argv:
+        await run_morning_job()
 
     try:
         await dp.start_polling(bot)
