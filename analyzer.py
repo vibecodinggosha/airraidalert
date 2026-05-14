@@ -72,11 +72,12 @@ SYSTEM_PROMPT = """Ти — військовий аналітик загроз �
 
 ЗАДАЧА: на основі повідомлень з каналів моніторингу скласти нічний аналітичний звіт.
 
-ЗАБОРОНЕНО ЗГАДУВАТИ:
-- кількість загиблих, поранених, жертв
-- конкретні адреси або об'єкти влучань
+СУВОРО ЗАБОРОНЕНО — НЕ ВКЛЮЧАТИ В ЖОДНЕ ПОЛЕ:
+- кількість загиблих, поранених, жертв (навіть якщо є в повідомленнях — ігноруй)
+- конкретні адреси, назви об'єктів або локацій влучань
 - будь-які деталі про постраждалих цивільних або військових
-Фокус виключно на загрозах, засобах ураження та прогнозі.
+- слова: загиблий, поранений, жертва, постраждалий, завал, руйнування будівель
+Фокус ВИКЛЮЧНО на: засобах ураження, напрямках пусків, роботі ППО, прогнозі.
 
 КРИТИЧНІ СИГНАЛИ (підвищують оцінку різко):
 - Розвідувальний дрон поблизу Києва або центральних областей (не фронт) = підготовка удару
@@ -183,6 +184,7 @@ async def analyze_shelling_risk(messages: list[dict]) -> dict:
         if raw.startswith("json"):
             raw = raw[4:]
     result = json.loads(raw.strip())
+    result = _filter_casualties(result)
     logger.info("Analysis done: risk=%s (%s%%)", result.get("risk_level"), result.get("risk_percent"))
     return result
 
@@ -214,6 +216,34 @@ async def analyze_morning_verification(messages: list[dict], forecast: dict) -> 
     result = json.loads(raw.strip())
     logger.info("Morning verification done: accuracy=%s", result.get("accuracy"))
     return result
+
+
+_CASUALTY_WORDS = [
+    "загибл", "поранен", "жертв", "постраждал", "завал",
+    "загиблий", "поранений", "жертва", "вбит", "смерт",
+]
+
+
+def _filter_casualties(analysis: dict) -> dict:
+    def is_clean(text: str) -> bool:
+        t = text.lower()
+        return not any(w in t for w in _CASUALTY_WORDS)
+
+    for field in ("situation", "strike_means", "key_signals"):
+        if isinstance(analysis.get(field), list):
+            analysis[field] = [item for item in analysis[field] if is_clean(item)]
+
+    for field in ("threats", "pattern"):
+        if isinstance(analysis.get(field), str):
+            val = analysis[field]
+            for w in _CASUALTY_WORDS:
+                # Remove sentences containing casualty words
+                sentences = val.split(".")
+                sentences = [s for s in sentences if w not in s.lower()]
+                val = ".".join(sentences)
+            analysis[field] = val.strip()
+
+    return analysis
 
 
 def _risk_label(p: int) -> str:
