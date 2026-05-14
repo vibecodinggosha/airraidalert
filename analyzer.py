@@ -19,7 +19,7 @@ FORECAST_FILE = "last_forecast.json"
 
 SYSTEM_PROMPT = """Ти — військовий аналітик. Пишеш стисло, тільки факти, без води.
 
-ЗАДАЧА: оцінити ймовірність нічного обстрілу України на основі повідомлень з каналів моніторингу.
+ЗАДАЧА: оцінити ймовірність нічного удару по Україні на основі повідомлень з каналів моніторингу.
 
 ПРАВИЛА:
 - Тільки конкретика: що, де, коли, скільки. Без загальних слів.
@@ -29,10 +29,22 @@ SYSTEM_PROMPT = """Ти — військовий аналітик. Пишеш с
 - Рекомендація — одне конкретне речення для цивільних.
 - Мова: тільки українська.
 
+Оцінюй кожен тип загрози окремо (0-100%):
+- rocket_percent: ймовірність ракетної атаки (балістика, крилаті ракети, Кінджал)
+- drone_percent: ймовірність масованого дронового удару (шахеди, 10+ одиниць)
+- combined_percent: ймовірність комбінованої атаки (дрони + ракети одночасно)
+
+risk_percent — загальна ймовірність будь-якого удару.
+risk_level визначається за найвищим з трьох показників:
+  0-30 → НИЗЬКИЙ, 31-55 → СЕРЕДНІЙ, 56-79 → ВИСОКИЙ, 80+ → КРИТИЧНИЙ
+
 ФОРМАТ — суворо JSON, без markdown:
 {
   "risk_level": "НИЗЬКИЙ" | "СЕРЕДНІЙ" | "ВИСОКИЙ" | "КРИТИЧНИЙ",
   "risk_percent": <0-100>,
+  "rocket_percent": <0-100>,
+  "drone_percent": <0-100>,
+  "combined_percent": <0-100>,
   "summary": "<2-3 речення: тільки факти і висновок>",
   "key_signals": ["<конкретний факт з джерела>", ...],
   "recommendation": "<одне речення>",
@@ -148,6 +160,9 @@ async def analyze_morning_verification(messages: list[dict], forecast: dict) -> 
 def format_report(analysis: dict, message_count: int) -> str:
     level = analysis.get("risk_level", "НЕВІДОМО")
     percent = analysis.get("risk_percent", 0)
+    rocket = analysis.get("rocket_percent", 0)
+    drone = analysis.get("drone_percent", 0)
+    combined = analysis.get("combined_percent", 0)
     summary = analysis.get("summary", "")
     signals = analysis.get("key_signals", [])
     recommendation = analysis.get("recommendation", "")
@@ -157,27 +172,30 @@ def format_report(analysis: dict, message_count: int) -> str:
         "НИЗЬКИЙ": "🟢", "СЕРЕДНІЙ": "🟡", "ВИСОКИЙ": "🟠", "КРИТИЧНИЙ": "🔴",
     }.get(level, "⚪")
 
-    bar = "█" * round(percent / 10) + "░" * (10 - round(percent / 10))
+    def bar(p):
+        f = round(p / 10)
+        return "█" * f + "░" * (10 - f)
+
     signals_text = ""
     if signals:
-        signals_text = "\n\n📌 *Ключові сигнали:*\n" + "\n".join(f"  • {s}" for s in signals[:6])
+        signals_text = "\n\n📌 *Сигнали:*\n" + "\n".join(f"  • {s}" for s in signals[:6])
 
     now_kyiv = datetime.now(KYIV_TZ)
     return (
-        f"🛡 *Нічна аналітика обстрілів — {now_kyiv.strftime('%d.%m.%Y')}*\n"
+        f"🛡 *Нічна аналітика — {now_kyiv.strftime('%d.%m.%Y')}*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{level_emoji} *Рівень загрози: {level}*\n"
-        f"📊 Ймовірність обстрілу: *{percent}%*\n"
-        f"`{bar}` {percent}%\n\n"
-        f"📝 *Висновок:*\n{summary}"
+        f"{level_emoji} *Загальна загроза: {level} — {percent}%*\n\n"
+        f"*Розбивка по типах удару:*\n"
+        f"🚀 Ракетна атака:      `{bar(rocket)}` {rocket}%\n"
+        f"🛸 Масований дрон:    `{bar(drone)}` {drone}%\n"
+        f"💥 Комбінована:        `{bar(combined)}` {combined}%\n\n"
+        f"📝 *Факти:*\n{summary}"
         f"{signals_text}\n\n"
-        f"⚠️ *Рекомендація:*\n{recommendation}\n\n"
+        f"⚠️ *Рекомендація:* {recommendation}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📡 Джерела: @DIUkraine · @kpszsu · @war\\_monitor · @bezpechniyregion · @vanek\\_nikolaev\n"
-        f"🔍 Проаналізовано повідомлень: {sources}\n"
-        f"🕐 Станом на: {now_kyiv.strftime('%H:%M')} за Києвом\n\n"
-        f"_Аналітика генерується автоматично на основі відкритих джерел. "
-        f"Слідкуйте за офіційними повідомленнями ДСНС та місцевої влади._"
+        f"📡 @DIUkraine · @kpszsu · @war\\_monitor · @bezpechniyregion · @vanek\\_nikolaev\n"
+        f"🔍 Повідомлень: {sources} · 🕐 {now_kyiv.strftime('%H:%M')} Київ\n\n"
+        f"_Дані з відкритих джерел. Слідкуйте за офіційними каналами._"
     )
 
 
