@@ -13,6 +13,9 @@ SESSION_NAME = os.getenv("SESSION_NAME", "airraidalert")
 ANALYTICS_HOUR = int(os.getenv("ANALYTICS_HOUR", "23"))
 ANALYTICS_MINUTE = int(os.getenv("ANALYTICS_MINUTE", "45"))
 
+MORNING_HOUR = int(os.getenv("MORNING_HOUR", "11"))
+MORNING_MINUTE = int(os.getenv("MORNING_MINUTE", "0"))
+
 KYIV_TZ = "Europe/Kiev"
 
 SOURCE_CHANNELS = [
