@@ -332,9 +332,7 @@ def format_report(analysis: dict, message_count: int) -> str:
         f"——\n"
         f"*Застереження*\n"
         f"Висновки зроблені аналітично на базі відкритих даних. "
-        f"Ворог у будь-який момент може змінити стратегію.\n\n"
-        f"📡 @DIUkraine · @kpszsu · @war\\_monitor · @bezpechniyregion · @vanek\\_nikolaev\n"
-        f"🔍 {message_count} повідомлень · {now_kyiv.strftime('%H:%M')} Київ"
+        f"Ворог у будь-який момент може змінити стратегію."
     )
 
 
