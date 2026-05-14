@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-CHANNELS = ["DIUkraine", "kpszsu", "war_monitor"]
+CHANNELS = ["DIUkraine", "kpszsu", "war_monitor", "bezpechniyregion", "vanek_nikolaev"]
 
 KEYWORDS = [
     "obstril", "raket", "udar", "atak", "dron", "shahed",
