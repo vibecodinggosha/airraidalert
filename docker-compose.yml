@@ -1,4 +1,5 @@
 version: "3.9"
+
 services:
   bot:
     build: .
@@ -6,5 +7,3 @@ services:
     env_file: .env
     volumes:
       - ./sessions:/app/sessions
-    environment:
-      - SESSION_NAME=/app/sessions/airraidalert

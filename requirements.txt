@@ -1,9 +1,8 @@
-telethon>=1.36.0
 aiogram>=3.13.0
 anthropic>=0.40.0
 apscheduler>=3.10.0
 pytz>=2024.1
 python-dotenv>=1.0.0
 aiohttp>=3.9.0
-aiofiles>=23.2.1
+beautifulsoup4>=4.12.0
 httpx>=0.27.0
