@@ -104,7 +104,9 @@ async def main() -> None:
         await run_morning_job()
 
     try:
-        await dp.start_polling(bot)
+        # No polling needed — bot only sends scheduled messages
+        while True:
+            await asyncio.sleep(60)
     finally:
         scheduler.shutdown()
         await bot.session.close()
