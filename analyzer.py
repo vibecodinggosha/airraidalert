@@ -254,6 +254,13 @@ def _filter_casualties(analysis: dict) -> dict:
     return analysis
 
 
+def _overall_risk_level(p: int) -> str:
+    if p >= 70: return "КРИТИЧНИЙ"
+    if p >= 50: return "ВИСОКИЙ"
+    if p >= 30: return "СЕРЕДНІЙ"
+    return "НИЗЬКИЙ"
+
+
 def _risk_label(p: int) -> str:
     if p >= 80: return "висока"
     if p >= 56: return "підвищена"
@@ -266,7 +273,6 @@ def format_report(analysis: dict, message_count: int) -> str:
     tonight = now_kyiv.strftime("%d.%m")
     tomorrow = (now_kyiv.replace(hour=0, minute=0) + __import__("datetime").timedelta(days=1)).strftime("%d.%m")
 
-    level = analysis.get("risk_level", "НЕВІДОМО")
     situation = analysis.get("situation", [])
     strike_means = analysis.get("strike_means", [])
     pattern = analysis.get("pattern", "")
@@ -280,6 +286,8 @@ def format_report(analysis: dict, message_count: int) -> str:
     combined_p = fn.get("combined_percent", 0)
     overall_p = fn.get("overall_percent", 0)
 
+    # Derive level from overall_percent so it's always consistent
+    level = _overall_risk_level(overall_p)
     level_emoji = {"НИЗЬКИЙ": "🟢", "СЕРЕДНІЙ": "🟡", "ВИСОКИЙ": "🟠", "КРИТИЧНИЙ": "🔴"}.get(level, "⚪")
 
     sit_text = "\n".join(f"• {s}" for s in situation) if situation else "• даних недостатньо"
