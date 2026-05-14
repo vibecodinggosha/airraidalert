@@ -22,6 +22,8 @@ SOURCE_CHANNELS = [
     "DIUkraine",
     "kpszsu",
     "war_monitor",
+    "bezpechniyregion",
+    "vanek_nikolaev",
 ]
 
 # How many hours back to collect messages for analysis
