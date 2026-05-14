@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from typing import Optional
 
 import anthropic
 import pytz
@@ -79,7 +80,7 @@ def save_forecast(analysis: dict) -> None:
         json.dump(data, f, ensure_ascii=False)
 
 
-def load_forecast() -> dict | None:
+def load_forecast() -> Optional[dict]:
     if not os.path.exists(FORECAST_FILE):
         return None
     with open(FORECAST_FILE, encoding="utf-8") as f:
