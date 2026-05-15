@@ -55,8 +55,8 @@ async def run_morning_job() -> None:
         if not forecast:
             logger.warning("No forecast found, skipping morning verification")
             return
-        # Collect overnight messages (last 10 hours)
-        messages = await collect_recent_messages(hours=10)
+        # Collect last 24 hours for morning briefing
+        messages = await collect_recent_messages(hours=24)
         verification = await analyze_morning_verification(messages, forecast)
         report = format_morning_report(verification, forecast, len(messages))
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
