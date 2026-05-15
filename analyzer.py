@@ -140,29 +140,31 @@ SYSTEM_PROMPT = """Ти — військовий аналітик загроз �
 
 MORNING_SYSTEM_PROMPT = """Ти — військовий аналітик. Пишеш стисло, тільки факти, без води.
 
-ЗАДАЧА: перевірити чи справдився вчорашній прогноз обстрілу, на основі нічних повідомлень.
+ЗАДАЧА: на основі повідомлень за добу скласти ранковий аналітичний брифінг.
 
 ПРАВИЛА:
-- Перерахуй конкретні події: пуски, перехоплення — тип, кількість, регіони.
 - НЕ згадуй загиблих, поранених, жертв або деталі влучань.
-- Якщо обстрілу не було — скажи прямо і коротко.
-- Оціни прогноз чесно: не виправдовуй помилки.
-- Висновок — одне речення.
+- Тільки факти: кількість БПЛА/ракет, засоби, напрямки, стан накопичення.
+- Кожен пункт — максимум 10 слів.
 - Мова: тільки українська.
 
 ВИЗНАЧЕННЯ МАСОВАНОГО ОБСТРІЛУ:
 - Масований = 300+ БПЛА АБО 20+ ракет АБО 10+ ракет + велика кількість БПЛА
 - 5-10 ракет + 100-150 БПЛА = звичайна атака, НЕ масована
-- Враховуй це при оцінці точності прогнозу
 
 ФОРМАТ — суворо JSON, без markdown:
 {
-  "confirmed": true | false,
-  "accuracy": "ТОЧНИЙ" | "ЧАСТКОВО" | "ХИБНИЙ",
-  "what_happened": "<2-3 речення: конкретні факти ночі>",
-  "key_events": ["<конкретна подія з джерела>", ...],
-  "conclusion": "<одне речення>",
-  "sources_used": <число>
+  "daily_update": {"drones": 0, "rockets": 0},
+  "attack_features": ["<коротко>", ...],
+  "strike_means": ["<тип: дані>", ...],
+  "threats": "<одне речення або 'нових достовірних не надходило'>",
+  "pattern_update": ["<факт про фазу накопичення>", ...],
+  "forecast_days": [
+    {"night": "дд-дд.мм", "percent": 0},
+    {"night": "дд-дд.мм", "percent": 0},
+    {"night": "дд-дд.мм", "percent": 0},
+    {"night": "дд-дд.мм", "percent": 0}
+  ]
 }"""
 
 
@@ -228,13 +230,9 @@ async def analyze_morning_verification(messages: list[dict], forecast: dict) -> 
     now_kyiv = datetime.now(KYIV_TZ)
     messages_block = _build_messages_block(messages)
     user_content = (
-        f"Дата перевірки (Київ): {now_kyiv.strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"=== ВЧОРАШНІЙ ПРОГНОЗ ===\n"
-        f"Рівень загрози: {forecast.get('risk_level')}\n"
-        f"Ймовірність обстрілу: {forecast.get('risk_percent')}%\n"
-        f"Висновок прогнозу: {forecast.get('summary')}\n\n"
-        f"=== ПОВІДОМЛЕННЯ ЗА НІЧ ===\n{messages_block}\n\n"
-        "Перевір чи справдився прогноз та надай JSON-звіт."
+        f"Дата брифінгу (Київ): {now_kyiv.strftime('%d.%m.%Y %H:%M')}\n\n"
+        f"=== ПОВІДОМЛЕННЯ ЗА ДОБУ ===\n{messages_block}\n\n"
+        "Склади ранковий аналітичний брифінг у форматі JSON."
     )
     response = await client.messages.create(
         model="claude-sonnet-4-6",
@@ -248,7 +246,8 @@ async def analyze_morning_verification(messages: list[dict], forecast: dict) -> 
         if raw.startswith("json"):
             raw = raw[4:]
     result = json.loads(raw.strip())
-    logger.info("Morning verification done: accuracy=%s", result.get("accuracy"))
+    result = _filter_casualties(result)
+    logger.info("Morning briefing done")
     return result
 
 
@@ -349,34 +348,34 @@ def format_report(analysis: dict, message_count: int) -> str:
 
 
 def format_morning_report(verification: dict, forecast: dict, message_count: int) -> str:
-    accuracy = verification.get("accuracy", "НЕВІДОМО")
-    confirmed = verification.get("confirmed", False)
-    what_happened = verification.get("what_happened", "")
-    events = verification.get("key_events", [])
-    conclusion = verification.get("conclusion", "")
-    sources = verification.get("sources_used", message_count)
-
-    accuracy_emoji = {"ТОЧНИЙ": "✅", "ЧАСТКОВО": "🔶", "ХИБНИЙ": "❌"}.get(accuracy, "❓")
-    forecast_level = forecast.get("risk_level", "?")
-    forecast_percent = forecast.get("risk_percent", 0)
-
-    events_text = ""
-    if events:
-        events_text = "\n\n📋 *Ключові події ночі:*\n" + "\n".join(f"  • {e}" for e in events[:6])
-
     now_kyiv = datetime.now(KYIV_TZ)
+    daily = verification.get("daily_update", {})
+    drones = daily.get("drones", "?")
+    rockets = daily.get("rockets", "?")
+    features = verification.get("attack_features", [])
+    means = verification.get("strike_means", [])
+    threats = verification.get("threats", "нових достовірних не надходило")
+    pattern = verification.get("pattern_update", [])
+    forecast_days = verification.get("forecast_days", [])
+
+    features_text = "\n".join(f"• {s}" for s in features) if features else "• даних немає"
+    means_text = "\n".join(f"• {s}" for s in means) if means else "• даних немає"
+    pattern_text = "\n".join(f"• {s}" for s in pattern) if pattern else "• даних немає"
+    days_text = "\n".join(f"• {d.get('night', '?')} — {d.get('percent', 0)}%" for d in forecast_days)
+
     return (
-        f"☀️ *Ранковий розбір прогнозу — {now_kyiv.strftime('%d.%m.%Y')}*\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{accuracy_emoji} *Прогноз: {accuracy}*\n\n"
-        f"🔮 *Вчорашній прогноз:* {forecast_level} ({forecast_percent}%)\n"
-        f"{'✔️ Обстріл стався' if confirmed else '✔️ Обстрілу не було'}\n\n"
-        f"🌙 *Що відбулось вночі:*\n{what_happened}"
-        f"{events_text}\n\n"
-        f"💬 *Висновок щодо прогнозу:*\n{conclusion}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📡 Джерела: @DIUkraine · @kpszsu · @war\\_monitor · @bezpechniyregion · @vanek\\_nikolaev\n"
-        f"🔍 Проаналізовано повідомлень: {sources}\n"
-        f"🕐 Станом на: {now_kyiv.strftime('%H:%M')} за Києвом\n\n"
-        f"_Наступний прогноз сьогодні о 23:45._"
+        f"*Інформація на {now_kyiv.strftime('%d.%m')}*\n\n"
+        f"*Оновлення за добу*\n"
+        f"• застосовано {drones} БПЛА\n"
+        f"• застосовано {rockets} ракет\n\n"
+        f"*Особливості атаки*\n{features_text}\n\n"
+        f"*Засоби ураження*\n{means_text}\n\n"
+        f"*Загрози*\n• {threats}\n\n"
+        f"*Оновлення патерну*\n{pattern_text}\n\n"
+        f"*Ймовірності масованої атаки по днях*\n{days_text}\n\n"
+        f"——\n"
+        f"*Застереження*\n"
+        f"Висновки зроблені виключно аналітично на базі існуючих даних. "
+        f"100 щоденних шахедів також можуть нести загрозу. "
+        f"Ворог в будь-який момент може змінити стратегію."
     )
