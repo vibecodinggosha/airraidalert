@@ -20,6 +20,12 @@ FORECAST_FILE = "last_forecast.json"
 BACKGROUND_KNOWLEDGE = """
 === БАЗА ЗНАНЬ: ПАТЕРНИ УДАРІВ РФ ПО УКРАЇНІ (2025-2026) ===
 
+ВИЗНАЧЕННЯ МАСОВАНОГО ОБСТРІЛУ (критично для оцінки прогнозу):
+- Масований обстріл = 300+ БПЛА АБО 20+ ракет АБО комбінація 10+ ракет + значна кількість БПЛА
+- Кілька ракет (5-10) + 100-150 БПЛА = звичайна нічна атака, НЕ масований обстріл
+- 141 БПЛА + 5 ракет = середня атака, не масована
+- Масована дронова атака = 300+ БПЛА за одну хвилю/добу
+
 ТАКТИКА КОМБІНОВАНИХ АТАК:
 - Спочатку хвилі дронів для виснаження ППО → потім ракети по цілях
 - Використовують ракети-імітації для перевантаження ППО
@@ -144,6 +150,11 @@ MORNING_SYSTEM_PROMPT = """Ти — військовий аналітик. Пи�
 - Висновок — одне речення.
 - Мова: тільки українська.
 
+ВИЗНАЧЕННЯ МАСОВАНОГО ОБСТРІЛУ:
+- Масований = 300+ БПЛА АБО 20+ ракет АБО 10+ ракет + велика кількість БПЛА
+- 5-10 ракет + 100-150 БПЛА = звичайна атака, НЕ масована
+- Враховуй це при оцінці точності прогнозу
+
 ФОРМАТ — суворо JSON, без markdown:
 {
   "confirmed": true | false,
@@ -167,11 +178,12 @@ def _build_messages_block(messages: list[dict]) -> str:
 
 
 def save_forecast(analysis: dict) -> None:
+    fn = analysis.get("forecast_tonight", {})
     data = {
         "date": datetime.now(KYIV_TZ).strftime("%d.%m.%Y"),
-        "risk_level": analysis.get("risk_level"),
-        "risk_percent": analysis.get("risk_percent"),
-        "summary": analysis.get("summary"),
+        "risk_level": _overall_risk_level(fn.get("overall_percent", 0)),
+        "risk_percent": fn.get("overall_percent", 0),
+        "summary": analysis.get("threats", ""),
     }
     with open(FORECAST_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
@@ -332,9 +344,7 @@ def format_report(analysis: dict, message_count: int) -> str:
         f"——\n"
         f"*Застереження*\n"
         f"Висновки зроблені аналітично на базі відкритих даних. "
-        f"Ворог у будь-який момент може змінити стратегію.\n\n"
-        f"📡 @DIUkraine · @kpszsu · @war\\_monitor · @bezpechniyregion · @vanek\\_nikolaev\n"
-        f"🔍 {message_count} повідомлень · {now_kyiv.strftime('%H:%M')} Київ"
+        f"Ворог у будь-який момент може змінити стратегію."
     )
 
 
