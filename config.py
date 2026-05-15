@@ -24,6 +24,7 @@ SOURCE_CHANNELS = [
     "war_monitor",
     "bezpechniyregion",
     "vanek_nikolaev",
+    "strategic_review",
 ]
 
 # How many hours back to collect messages for analysis
