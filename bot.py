@@ -123,8 +123,13 @@ async def main() -> None:
     scheduler = setup_scheduler()
     scheduler.start()
 
-    # Run initial collection on startup
-    await collect_job()
+    # Run initial collection on startup with wider window to populate DB
+    try:
+        messages = await collect_recent_messages(hours=20)
+        saved = db.save_messages(messages)
+        logger.info("Initial collection: +%d new messages (total in DB: %d)", saved, db.count_messages())
+    except Exception:
+        logger.exception("Initial collection failed")
 
     if "--now" in sys.argv:
         await run_analytics_job()
