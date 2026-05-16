@@ -2,6 +2,8 @@
 Fetches air raid alert status from ubilling API.
 Returns active alerts as messages for analysis.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 

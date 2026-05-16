@@ -2,6 +2,8 @@
 Generates Ukraine air raid alert map PNG using the and3rson/raid SVG template.
 Downloads the template once, does string substitution, converts SVG -> PNG via cairosvg.
 """
+from __future__ import annotations
+
 import logging
 import os
 import re

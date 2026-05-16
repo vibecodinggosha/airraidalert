@@ -1,6 +1,7 @@
 """
 Analyzes collected messages with Claude and produces a shelling risk report.
 """
+from __future__ import annotations
 import json
 import logging
 import os
