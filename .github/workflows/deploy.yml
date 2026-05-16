@@ -1,0 +1,28 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - claude/shelling-analytics-bot-JJTxT
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Deploy bot files
+        run: |
+          cd ~/airraidalert
+          BASE="https://raw.githubusercontent.com/vibecodinggosha/airraidalert/claude/shelling-analytics-bot-JJTxT"
+          wget -q "$BASE/bot.py" -O bot.py
+          wget -q "$BASE/analyzer.py" -O analyzer.py
+          wget -q "$BASE/parser.py" -O parser.py
+          wget -q "$BASE/db.py" -O db.py
+          wget -q "$BASE/config.py" -O config.py
+          wget -q "$BASE/alerts.py" -O alerts.py
+          wget -q "$BASE/map_generator.py" -O map_generator.py
+          sudo dnf install -y -q cairo-gobject libffi || true
+          pip3 install -q cairosvg
+          screen -S bot -X quit || true
+          sleep 2
+          screen -S bot -dm bash -c "cd ~/airraidalert && python3 bot.py"
+          echo "Deployed OK"

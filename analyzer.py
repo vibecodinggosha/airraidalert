@@ -1,6 +1,7 @@
 """
 Analyzes collected messages with Claude and produces a shelling risk report.
 """
+from __future__ import annotations
 import json
 import logging
 import os
@@ -291,7 +292,7 @@ def _risk_label(p: int) -> str:
     return "низька"
 
 
-def format_report(analysis: dict, message_count: int) -> str:
+def format_report(analysis: dict, message_count: int, alerts_map: str = "") -> str:
     now_kyiv = datetime.now(KYIV_TZ)
     tonight = now_kyiv.strftime("%d.%m")
     tomorrow = (now_kyiv.replace(hour=0, minute=0) + __import__("datetime").timedelta(days=1)).strftime("%d.%m")
@@ -325,6 +326,8 @@ def format_report(analysis: dict, message_count: int) -> str:
     if signals:
         signals_text = "*Ключові сигнали:*\n" + "\n".join(f"• {s}" for s in signals[:6])
 
+    alerts_block = f"\n{alerts_map}\n" if alerts_map else ""
+
     return (
         f"✈️ *Ніч {tonight}-{tomorrow}*\n\n"
         f"*На цей момент*\n{sit_text}\n\n"
@@ -337,7 +340,8 @@ def format_report(analysis: dict, message_count: int) -> str:
         f"Вірогідність масованого дронового удару — {_risk_label(drone_p)} ({drone_p}%)\n"
         f"Вірогідність комбінованої атаки — {_risk_label(combined_p)} ({combined_p}%)\n"
         f"{level_emoji} Загальна загроза цієї ночі — *{level} ({overall_p}%)*\n\n"
-        f"{days_text}\n\n"
+        f"{days_text}\n"
+        f"{alerts_block}\n"
         f"——\n"
         f"*Застереження*\n"
         f"Висновки зроблені аналітично на базі відкритих даних. "
@@ -345,7 +349,7 @@ def format_report(analysis: dict, message_count: int) -> str:
     )
 
 
-def format_morning_report(verification: dict, forecast: dict, message_count: int) -> str:
+def format_morning_report(verification: dict, forecast: dict, message_count: int, alerts_map: str = "") -> str:
     now_kyiv = datetime.now(KYIV_TZ)
     daily = verification.get("daily_update", {})
     drones = daily.get("drones", "?")
@@ -366,12 +370,15 @@ def format_morning_report(verification: dict, forecast: dict, message_count: int
 
     days_block = f"\n*Ймовірності масованої атаки по днях*\n{days_text}\n\n" if days_text else ""
 
+    alerts_block = f"{alerts_map}\n\n" if alerts_map else ""
+
     return (
         f"*Інформація на {now_kyiv.strftime('%d.%m')}*\n\n"
         f"*Оновлення за добу*\n{daily_text}\n\n"
         f"*Засоби ураження*\n{means_text}\n\n"
         f"*Загрози*\n{threats_text}\n"
         f"{days_block}"
+        f"{alerts_block}"
         f"——\n"
         f"*Застереження*\n"
         f"Висновки зроблені виключно аналітично на базі існуючих даних. "
