@@ -18,6 +18,7 @@ from analyzer import (
     load_forecast,
     save_forecast,
 )
+from alerts import fetch_alerts
 from parser import collect_recent_messages
 
 logging.basicConfig(
@@ -35,10 +36,12 @@ dp = Dispatcher()
 
 
 async def collect_job() -> None:
-    """Runs every 30 min — fetches recent messages and saves to DB."""
+    """Runs every 30 min — fetches recent messages and alert status, saves to DB."""
     try:
         messages = await collect_recent_messages(hours=2)
-        saved = db.save_messages(messages)
+        alert_msgs = await fetch_alerts()
+        all_msgs = messages + alert_msgs
+        saved = db.save_messages(all_msgs)
         total = db.count_messages()
         logger.info("Collector: +%d new messages (total in DB: %d)", saved, total)
     except Exception:
