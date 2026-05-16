@@ -144,8 +144,8 @@ MORNING_SYSTEM_PROMPT = """Ти — військовий аналітик. Пи�
 
 ПРАВИЛА:
 - НЕ згадуй загиблих, поранених, жертв або деталі влучань.
-- Тільки факти: кількість БПЛА/ракет, засоби, напрямки, стан накопичення.
-- Кожен пункт — максимум 10 слів.
+- Тільки факти: кількість БПЛА/ракет, стан накопичення, загрози.
+- Кожен пункт — коротко і конкретно.
 - Мова: тільки українська.
 
 ВИЗНАЧЕННЯ МАСОВАНОГО ОБСТРІЛУ:
@@ -155,10 +155,8 @@ MORNING_SYSTEM_PROMPT = """Ти — військовий аналітик. Пи�
 ФОРМАТ — суворо JSON, без markdown:
 {
   "daily_update": {"drones": 0, "rockets": 0},
-  "attack_features": ["<коротко>", ...],
-  "strike_means": ["<тип: дані>", ...],
-  "threats": "<одне речення або 'нових достовірних не надходило'>",
-  "pattern_update": ["<факт про фазу накопичення>", ...],
+  "strike_means": ["накопичено X БПЛА", "стратегічна авіація — X-X бортів", ...],
+  "threats": ["<загроза 1>", "<загроза 2>"],
   "forecast_days": [
     {"night": "дд-дд.мм", "percent": 0},
     {"night": "дд-дд.мм", "percent": 0},
@@ -352,30 +350,31 @@ def format_morning_report(verification: dict, forecast: dict, message_count: int
     daily = verification.get("daily_update", {})
     drones = daily.get("drones", "?")
     rockets = daily.get("rockets", "?")
-    features = verification.get("attack_features", [])
     means = verification.get("strike_means", [])
-    threats = verification.get("threats", "нових достовірних не надходило")
-    pattern = verification.get("pattern_update", [])
+    threats = verification.get("threats", [])
     forecast_days = verification.get("forecast_days", [])
 
-    features_text = "\n".join(f"• {s}" for s in features) if features else "• даних немає"
     means_text = "\n".join(f"• {s}" for s in means) if means else "• даних немає"
-    pattern_text = "\n".join(f"• {s}" for s in pattern) if pattern else "• даних немає"
+    threats_text = "\n".join(f"• {s}" for s in threats) if threats else "• нових достовірних не надходило"
     days_text = "\n".join(f"• {d.get('night', '?')} — {d.get('percent', 0)}%" for d in forecast_days)
+
+    # Build daily update — skip rockets line if 0
+    daily_lines = [f"• застосовано {drones} БПЛА"]
+    if rockets:
+        daily_lines.append(f"• застосовано {rockets} ракет")
+    daily_text = "\n".join(daily_lines)
+
+    days_block = f"\n*Ймовірності масованої атаки по днях*\n{days_text}\n\n" if days_text else ""
 
     return (
         f"*Інформація на {now_kyiv.strftime('%d.%m')}*\n\n"
-        f"*Оновлення за добу*\n"
-        f"• застосовано {drones} БПЛА\n"
-        f"• застосовано {rockets} ракет\n\n"
-        f"*Особливості атаки*\n{features_text}\n\n"
+        f"*Оновлення за добу*\n{daily_text}\n\n"
         f"*Засоби ураження*\n{means_text}\n\n"
-        f"*Загрози*\n• {threats}\n\n"
-        f"*Оновлення патерну*\n{pattern_text}\n\n"
-        f"*Ймовірності масованої атаки по днях*\n{days_text}\n\n"
+        f"*Загрози*\n{threats_text}\n"
+        f"{days_block}"
         f"——\n"
         f"*Застереження*\n"
         f"Висновки зроблені виключно аналітично на базі існуючих даних. "
-        f"100 щоденних шахедів також можуть нести загрозу. "
-        f"Ворог в будь-який момент може змінити стратегію."
+        f"100 щоденних шахедів також можуть нести загрозу, а балістику можуть запустити коли завгодно. "
+        f"Ворог в будь-який момент може змінити стратегію і масований обстріл буде раніше/пізніше."
     )
