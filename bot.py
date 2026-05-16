@@ -46,10 +46,10 @@ async def _fetch_alerts_with_regions() -> tuple[list[str], str]:
     return active_regions, alerts_map
 
 
-async def _send_map_photo(active_regions: list[str]) -> None:
+async def _send_map_photo(active_regions: list[str], analysis: dict | None = None) -> None:
     """Generate and send Ukraine alert map as a photo."""
     try:
-        img_bytes = await asyncio.to_thread(generate_map_image, active_regions)
+        img_bytes = await asyncio.to_thread(generate_map_image, active_regions, analysis)
         if img_bytes:
             photo = BufferedInputFile(img_bytes, filename="alerts_map.png")
             await bot.send_photo(chat_id=config.OUTPUT_CHANNEL_ID, photo=photo)
@@ -86,7 +86,7 @@ async def run_analytics_job() -> None:
         active_regions, alerts_map = await _fetch_alerts_with_regions()
         report = format_report(analysis, len(messages), alerts_map)
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
-        await _send_map_photo(active_regions)
+        await _send_map_photo(active_regions, analysis)
         logger.info("Nightly report posted successfully (%d messages)", len(messages))
     except Exception:
         logger.exception("Nightly analytics job failed")
