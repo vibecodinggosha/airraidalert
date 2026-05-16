@@ -6,7 +6,51 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-CHANNELS = ["DIUkraine", "kpszsu", "war_monitor", "bezpechniyregion", "vanek_nikolaev", "strategic_review"]
+CHANNELS = [
+    # === Офіційні / розвідка ===
+    "DIUkraine",          # ГУР МО України
+    "kpszsu",             # Командування Повітряних Сил
+    "Ukrainian_Intelligence",
+    "bezpechniyregion",
+
+    # === Моніторинг загроз ===
+    "war_monitor",
+    "raketna_neb",        # ракетна небезпека
+    "kudy_letyt",         # куди летить
+    "avimonitor",         # авіаційний моніторинг
+    "eRadarrua",          # радар
+    "radar_raketaa",
+    "war_raketaua",
+    "mon1tor_ua",
+    "povitryanatrivogaaa",
+
+    # === Аналітика / огляди ===
+    "vanek_nikolaev",
+    "strategic_review",
+    "strategicontrol",
+    "bayraktarmedia",
+
+    # === Регіональні (північ / схід) ===
+    "kyiv_golovne",
+    "chernihiv_golovne",
+    "sumy_main",
+    "suspilnesumy",
+
+    # === Регіональні (схід / південь) ===
+    "zp_golovne",         # Запоріжжя
+    "odesa_golovne",
+    "kherson_monitoring",
+    "poltava_golovne",
+
+    # === Регіональні (захід / центр) ===
+    "lviv_golovne",
+    "zahid_golovne_ua",   # Захід загально
+    "rivne_golovne",
+    "volyn_golovne_ua",
+    "zhytomyr_glvn",
+    "vinnytsia_golovne",
+    "chernivtsi_main",
+]
 
 KEYWORDS = [
     "obstril", "raket", "udar", "atak", "dron", "shahed",
