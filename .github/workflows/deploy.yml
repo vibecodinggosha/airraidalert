@@ -3,7 +3,7 @@ name: Deploy to EC2
 on:
   push:
     branches:
-      - claude/shelling-analytics-bot-JJTxT
+      - main
 
 jobs:
   deploy:
@@ -12,7 +12,7 @@ jobs:
       - name: Deploy bot files
         run: |
           cd ~/airraidalert
-          BASE="https://raw.githubusercontent.com/vibecodinggosha/airraidalert/claude/shelling-analytics-bot-JJTxT"
+          BASE="https://raw.githubusercontent.com/vibecodinggosha/airraidalert/main"
           wget -q "$BASE/bot.py" -O bot.py
           wget -q "$BASE/analyzer.py" -O analyzer.py
           wget -q "$BASE/parser.py" -O parser.py
