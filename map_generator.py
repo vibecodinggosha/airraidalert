@@ -104,6 +104,7 @@ def generate_map_image(active_regions: list[str]) -> bytes | None:
         return COLOR_ALERT if region_id in active_ids else COLOR_CALM
 
     svg = _PLACEHOLDER_RE.sub(_replace, tpl)
+    svg = re.sub(r'\{\{[^}]+\}\}', '', svg)
 
     try:
         import cairosvg
