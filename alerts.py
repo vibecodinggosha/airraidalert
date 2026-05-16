@@ -76,20 +76,17 @@ def _parse_alerts(data) -> list[str]:
     active = []
 
     if isinstance(data, dict):
-        for region, info in data.items():
-            if isinstance(info, dict):
-                # Format: {"Регіон": {"alertnow": true}}
-                if info.get("alertnow") or info.get("alert") or info.get("status"):
-                    active.append(region)
-            elif isinstance(info, bool) and info:
+        # Format: {"source": "...", "cachedat": "...", "states": {"Регіон": {"alertnow": bool}}}
+        states = data.get("states", data)
+        for region, info in states.items():
+            if isinstance(info, dict) and info.get("alertnow"):
                 active.append(region)
 
     elif isinstance(data, list):
         for item in data:
             if isinstance(item, dict):
                 name = item.get("name") or item.get("region") or item.get("oblast", "")
-                alert = item.get("alertnow") or item.get("alert") or item.get("status")
-                if alert and name:
+                if item.get("alertnow") and name:
                     active.append(name)
 
     return active
