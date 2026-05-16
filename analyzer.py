@@ -2,6 +2,7 @@
 Analyzes collected messages with Claude and produces a shelling risk report.
 """
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import os
@@ -17,6 +18,24 @@ logger = logging.getLogger(__name__)
 
 KYIV_TZ = pytz.timezone(config.KYIV_TZ)
 FORECAST_FILE = "last_forecast.json"
+
+_RETRYABLE = (anthropic.InternalServerError, anthropic.APIStatusError)
+_MAX_RETRIES = 4
+_RETRY_BASE_DELAY = 2.0
+
+
+async def _create_with_retry(client: anthropic.AsyncAnthropic, **kwargs) -> anthropic.types.Message:
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await client.messages.create(**kwargs)
+        except _RETRYABLE as exc:
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            delay = _RETRY_BASE_DELAY * (2 ** attempt)
+            logger.warning("Anthropic API error (attempt %d/%d): %s — retrying in %.0fs",
+                           attempt + 1, _MAX_RETRIES, exc, delay)
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
 
 BACKGROUND_KNOWLEDGE = """
 === БАЗА ЗНАНЬ: ПАТЕРНИ УДАРІВ РФ ПО УКРАЇНІ (2025-2026) ===
@@ -207,7 +226,8 @@ async def analyze_shelling_risk(messages: list[dict]) -> dict:
         f"=== ПОВІДОМЛЕННЯ З КАНАЛІВ ===\n{messages_block}\n\n"
         "Проведи аналіз та надай структурований JSON-звіт."
     )
-    response = await client.messages.create(
+    response = await _create_with_retry(
+        client,
         model="claude-sonnet-4-6",
         max_tokens=2048,
         system=SYSTEM_PROMPT,
@@ -233,7 +253,8 @@ async def analyze_morning_verification(messages: list[dict], forecast: dict) -> 
         f"=== ПОВІДОМЛЕННЯ ЗА ДОБУ ===\n{messages_block}\n\n"
         "Склади ранковий аналітичний брифінг у форматі JSON."
     )
-    response = await client.messages.create(
+    response = await _create_with_retry(
+        client,
         model="claude-sonnet-4-6",
         max_tokens=2048,
         system=MORNING_SYSTEM_PROMPT,
