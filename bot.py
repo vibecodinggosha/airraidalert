@@ -18,7 +18,7 @@ from analyzer import (
     load_forecast,
     save_forecast,
 )
-from alerts import fetch_alerts
+from alerts import fetch_alerts, fetch_alerts_map
 from parser import collect_recent_messages
 
 logging.basicConfig(
@@ -59,7 +59,8 @@ async def run_analytics_job() -> None:
             db.save_messages(messages)
         analysis = await analyze_shelling_risk(messages)
         save_forecast(analysis)
-        report = format_report(analysis, len(messages))
+        alerts_map = await fetch_alerts_map()
+        report = format_report(analysis, len(messages), alerts_map)
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
         logger.info("Nightly report posted successfully (%d messages)", len(messages))
     except Exception:
@@ -78,7 +79,8 @@ async def run_morning_job() -> None:
         if not messages:
             messages = await collect_recent_messages(hours=24)
         verification = await analyze_morning_verification(messages, forecast)
-        report = format_morning_report(verification, forecast, len(messages))
+        alerts_map = await fetch_alerts_map()
+        report = format_morning_report(verification, forecast, len(messages), alerts_map)
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
         logger.info("Morning briefing posted successfully (%d messages)", len(messages))
     except Exception:
