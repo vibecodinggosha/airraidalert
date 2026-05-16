@@ -18,6 +18,9 @@ jobs:
           wget -q "$BASE/parser.py" -O parser.py
           wget -q "$BASE/db.py" -O db.py
           wget -q "$BASE/config.py" -O config.py
+          wget -q "$BASE/alerts.py" -O alerts.py
+          wget -q "$BASE/map_generator.py" -O map_generator.py
+          pip3 install -q matplotlib
           screen -S bot -X quit || true
           sleep 2
           screen -S bot -dm bash -c "cd ~/airraidalert && python3 bot.py"

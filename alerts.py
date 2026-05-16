@@ -108,3 +108,11 @@ async def fetch_alerts_map() -> str:
     short = [SHORT_NAMES.get(r, r) for r in active]
     regions_str = " · ".join(short)
     return f"🗺 *Карта тривог ({now_str})* — {len(active)} обл.\n🔴 {regions_str}"
+
+
+async def fetch_active_regions() -> list[str]:
+    """Returns list of region names (Ukrainian) with active alerts."""
+    data = await _get_raw_data()
+    if not data:
+        return []
+    return _parse_alerts(data)

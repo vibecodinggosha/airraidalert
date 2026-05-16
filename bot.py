@@ -6,6 +6,7 @@ import pytz
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BufferedInputFile
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
@@ -18,7 +19,8 @@ from analyzer import (
     load_forecast,
     save_forecast,
 )
-from alerts import fetch_alerts, fetch_alerts_map
+from alerts import fetch_alerts, fetch_alerts_map, fetch_active_regions
+from map_generator import ensure_geojson, generate_map_image
 from parser import collect_recent_messages
 
 logging.basicConfig(
@@ -33,6 +35,26 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
 )
 dp = Dispatcher()
+
+
+async def _fetch_alerts_with_regions() -> tuple[list[str], str]:
+    """Returns (active_regions, map_text) for use in reports."""
+    active_regions = await fetch_active_regions()
+    alerts_map = await fetch_alerts_map()
+    return active_regions, alerts_map
+
+
+async def _send_map_photo(active_regions: list[str]) -> None:
+    """Generate and send Ukraine alert map as a photo."""
+    try:
+        img_bytes = await asyncio.to_thread(generate_map_image, active_regions)
+        if img_bytes:
+            photo = BufferedInputFile(img_bytes, filename="alerts_map.png")
+            await bot.send_photo(chat_id=config.OUTPUT_CHANNEL_ID, photo=photo)
+        else:
+            logger.warning("Map image generation returned None")
+    except Exception:
+        logger.exception("Failed to send map photo")
 
 
 async def collect_job() -> None:
@@ -59,9 +81,10 @@ async def run_analytics_job() -> None:
             db.save_messages(messages)
         analysis = await analyze_shelling_risk(messages)
         save_forecast(analysis)
-        alerts_map = await fetch_alerts_map()
+        active_regions, alerts_map = await _fetch_alerts_with_regions()
         report = format_report(analysis, len(messages), alerts_map)
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
+        await _send_map_photo(active_regions)
         logger.info("Nightly report posted successfully (%d messages)", len(messages))
     except Exception:
         logger.exception("Nightly analytics job failed")
@@ -79,9 +102,10 @@ async def run_morning_job() -> None:
         if not messages:
             messages = await collect_recent_messages(hours=24)
         verification = await analyze_morning_verification(messages, forecast)
-        alerts_map = await fetch_alerts_map()
+        active_regions, alerts_map = await _fetch_alerts_with_regions()
         report = format_morning_report(verification, forecast, len(messages), alerts_map)
         await bot.send_message(chat_id=config.OUTPUT_CHANNEL_ID, text=report)
+        await _send_map_photo(active_regions)
         logger.info("Morning briefing posted successfully (%d messages)", len(messages))
     except Exception:
         logger.exception("Morning briefing job failed")
@@ -118,6 +142,7 @@ def setup_scheduler() -> AsyncIOScheduler:
 
 async def main() -> None:
     db.init_db()
+    await ensure_geojson()
     logger.info(
         "Bot starting. Collector every 30min. Nightly at %02d:%02d, Morning at %02d:%02d Kyiv time",
         config.ANALYTICS_HOUR,
