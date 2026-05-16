@@ -1,150 +1,114 @@
 """
-Generates Ukraine air raid alert map image using matplotlib + GADM GeoJSON.
+Generates Ukraine air raid alert map PNG using the and3rson/raid SVG template.
+Downloads the template once, does string substitution, converts SVG -> PNG via cairosvg.
 """
-import io
-import json
 import logging
 import os
+import re
 
 import aiohttp
 
 logger = logging.getLogger(__name__)
 
-GEOJSON_CACHE = "ukraine_regions.geojson"
+SVG_TEMPLATE_CACHE = "ukraine_map.svg.tpl"
 
-# GADM 4.1 NAME_1 -> Ukrainian API region name
-GADM_TO_API = {
-    "Cherkasy": "Черкаська область",
-    "Chernihiv": "Чернігівська область",
-    "Chernivtsi": "Чернівецька область",
-    "Dnipropetrovsk": "Дніпропетровська область",
-    "Donetsk": "Донецька область",
-    "Ivano-Frankivsk": "Івано-Франківська область",
-    "Kharkiv": "Харківська область",
-    "Kherson": "Херсонська область",
-    "Khmelnytskyi": "Хмельницька область",
-    "Kiev": "Київська область",
-    "Kiev City": "м. Київ",
-    "Kirovohrad": "Кіровоградська область",
-    "Luhansk": "Луганська область",
-    "Lviv": "Львівська область",
-    "Mykolaiv": "Миколаївська область",
-    "Odessa": "Одеська область",
-    "Poltava": "Полтавська область",
-    "Rivne": "Рівненська область",
-    "Sumy": "Сумська область",
-    "Ternopil": "Тернопільська область",
-    "Vinnytsia": "Вінницька область",
-    "Volyn": "Волинська область",
-    "Zakarpattia": "Закарпатська область",
-    "Zaporizhia": "Запорізька область",
-    "Zhytomyr": "Житомирська область",
+# and3rson/raid SVG template (IDs 1-25 match updater.go region list)
+# https://raw.githubusercontent.com/and3rson/raid/main/raid/assets/ua.svg.tpl
+_SVG_TPL_URL = "".join(chr(c) for c in [
+    104,116,116,112,115,58,47,47,114,97,119,46,103,105,116,104,117,98,117,115,
+    101,114,99,111,110,116,101,110,116,46,99,111,109,47,97,110,100,51,114,115,
+    111,110,47,114,97,105,100,47,114,101,102,115,47,104,101,97,100,115,47,109,
+    97,105,110,47,114,97,105,100,47,97,115,115,101,116,115,47,117,97,46,115,
+    118,103,46,116,112,108
+])
+
+# Ukrainian API region name (ubilling) -> region ID in SVG template
+API_TO_ID = {
+    "Вінницька область": 1,
+    "Волинська область": 2,
+    "Дніпропетровська область": 3,
+    "Донецька область": 4,
+    "Житомирська область": 5,
+    "Закарпатська область": 6,
+    "Запорізька область": 7,
+    "Івано-Франківська область": 8,
+    "Київська область": 9,
+    "Кіровоградська область": 10,
+    "Луганська область": 11,
+    "Львівська область": 12,
+    "Миколаївська область": 13,
+    "Одеська область": 14,
+    "Полтавська область": 15,
+    "Рівненська область": 16,
+    "Сумська область": 17,
+    "Тернопільська область": 18,
+    "Харківська область": 19,
+    "Херсонська область": 20,
+    "Хмельницька область": 21,
+    "Черкаська область": 22,
+    "Чернівецька область": 23,
+    "Чернігівська область": 24,
+    "м. Київ": 25,
 }
 
-OCCUPIED = {"Crimea", "Sevastopol"}
+COLOR_ALERT = "#dd5522"
+COLOR_CALM = "#77aa55"
+
+_PLACEHOLDER_RE = re.compile(
+    r"\{\{\s*if\s*\(index\s*\.alerts\s*(\d+)\s*\)\s*\}\}"
+    r"#[0-9a-fA-F]{6}"
+    r"\{\{\s*else\s*\}\}"
+    r"#[0-9a-fA-F]{6}"
+    r"\{\{\s*end\s*\}\}"
+)
 
 
-async def ensure_geojson() -> bool:
-    """Download and cache Ukraine regions GeoJSON (GADM 4.1, run once)."""
-    if os.path.exists(GEOJSON_CACHE):
+async def ensure_svg_template() -> bool:
+    """Download and cache the SVG template from and3rson/raid (run once)."""
+    if os.path.exists(SVG_TEMPLATE_CACHE):
         return True
-    # https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_UKR_1.json
-    url = "".join(chr(c) for c in [
-        104,116,116,112,115,58,47,47,103,101,111,100,97,116,97,46,117,99,100,
-        97,118,105,115,46,101,100,117,47,103,97,100,109,47,103,97,100,109,52,
-        46,49,47,106,115,111,110,47,103,97,100,109,52,49,95,85,75,82,95,49,
-        46,106,115,111,110
-    ])
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=120)) as r:
+            async with s.get(_SVG_TPL_URL, timeout=aiohttp.ClientTimeout(total=30)) as r:
                 if r.status == 200:
                     data = await r.read()
-                    with open(GEOJSON_CACHE, "wb") as f:
+                    with open(SVG_TEMPLATE_CACHE, "wb") as f:
                         f.write(data)
-                    logger.info("Downloaded Ukraine GeoJSON (%d bytes)", len(data))
+                    logger.info("Downloaded SVG template (%d bytes)", len(data))
                     return True
-                logger.warning("GeoJSON download HTTP %d", r.status)
+                logger.warning("SVG template download HTTP %d", r.status)
     except Exception as e:
-        logger.error("GeoJSON download failed: %s", e)
+        logger.error("SVG template download failed: %s", e)
     return False
 
 
 def generate_map_image(active_regions: list[str]) -> bytes | None:
-    """Generate PNG map of Ukraine with alert regions highlighted. Returns bytes or None."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
-    except ImportError:
-        logger.error("matplotlib not installed: pip install matplotlib")
-        return None
-
-    if not os.path.exists(GEOJSON_CACHE):
-        logger.warning("GeoJSON not cached, map unavailable")
+    """Render Ukraine alert map PNG. Returns PNG bytes or None on error."""
+    if not os.path.exists(SVG_TEMPLATE_CACHE):
+        logger.warning("SVG template not cached, map unavailable")
         return None
 
     try:
-        with open(GEOJSON_CACHE, encoding="utf-8") as f:
-            geojson = json.load(f)
+        with open(SVG_TEMPLATE_CACHE, encoding="utf-8") as f:
+            tpl = f.read()
     except Exception as e:
-        logger.error("GeoJSON load error: %s", e)
+        logger.error("SVG template read error: %s", e)
         return None
 
-    active_set = set(active_regions)
+    active_ids = {API_TO_ID[r] for r in active_regions if r in API_TO_ID}
 
-    fig, ax = plt.subplots(figsize=(14, 9), facecolor="#0d1117")
-    ax.set_facecolor("#0d1117")
-    ax.set_aspect("equal")
-    ax.axis("off")
+    def _replace(m: re.Match) -> str:
+        region_id = int(m.group(1))
+        return COLOR_ALERT if region_id in active_ids else COLOR_CALM
 
-    for feature in geojson.get("features", []):
-        props = feature.get("properties", {})
-        name_en = props.get("NAME_1", props.get("name", ""))
-        if name_en in OCCUPIED:
-            color = "#4a4a5a"
-        elif GADM_TO_API.get(name_en, "") in active_set:
-            color = "#e53935"
-        else:
-            color = "#2e7d32"
-        _draw_geom(ax, feature.get("geometry", {}), color)
+    svg = _PLACEHOLDER_RE.sub(_replace, tpl)
 
-    count = len(active_regions)
-    title = f"Air Raid Alerts: {count} region{'s' if count != 1 else ''}" if count else "No active alerts"
-    ax.set_title(title, color="white", fontsize=14, pad=8, fontweight="bold")
-
-    legend = [
-        mpatches.Patch(color="#e53935", label="Alert active"),
-        mpatches.Patch(color="#2e7d32", label="Clear"),
-        mpatches.Patch(color="#4a4a5a", label="Occupied"),
-    ]
-    ax.legend(handles=legend, loc="lower left", facecolor="#1a1a2e",
-              edgecolor="#555", labelcolor="white", fontsize=11)
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=130, bbox_inches="tight",
-                facecolor="#0d1117", edgecolor="none")
-    plt.close()
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def _draw_geom(ax, geom, color):
-    t = geom.get("type", "")
-    c = geom.get("coordinates", [])
-    if t == "Polygon":
-        _fill(ax, c[0], color)
-    elif t == "MultiPolygon":
-        for poly in c:
-            _fill(ax, poly[0], color)
-
-
-def _fill(ax, ring, color):
     try:
-        xs = [p[0] for p in ring]
-        ys = [p[1] for p in ring]
-        ax.fill(xs, ys, color=color, alpha=0.88, linewidth=0)
-        ax.plot(xs + [xs[0]], ys + [ys[0]], color="#cccccc", linewidth=0.25, alpha=0.4)
-    except Exception:
-        pass
+        import cairosvg
+        return cairosvg.svg2png(bytestring=svg.encode("utf-8"), output_width=1000, output_height=670)
+    except ImportError:
+        logger.error("cairosvg not installed: pip install cairosvg")
+        return None
+    except Exception as e:
+        logger.error("SVG render error: %s", e)
+        return None

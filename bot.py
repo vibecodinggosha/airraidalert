@@ -20,7 +20,7 @@ from analyzer import (
     save_forecast,
 )
 from alerts import fetch_alerts, fetch_alerts_map, fetch_active_regions
-from map_generator import ensure_geojson, generate_map_image
+from map_generator import ensure_svg_template, generate_map_image
 from parser import collect_recent_messages
 
 logging.basicConfig(
@@ -142,7 +142,7 @@ def setup_scheduler() -> AsyncIOScheduler:
 
 async def main() -> None:
     db.init_db()
-    await ensure_geojson()
+    await ensure_svg_template()
     logger.info(
         "Bot starting. Collector every 30min. Nightly at %02d:%02d, Morning at %02d:%02d Kyiv time",
         config.ANALYTICS_HOUR,
