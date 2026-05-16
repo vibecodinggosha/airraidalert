@@ -5,6 +5,7 @@ Returns active alerts as messages for analysis.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 
 import aiohttp
@@ -13,6 +14,10 @@ import pytz
 logger = logging.getLogger(__name__)
 
 ALERTS_URL = "http" + "://ubilling.net.ua/aerialalerts/"
+
+_cache_data: dict | None = None
+_cache_ts: float = 0.0
+_CACHE_TTL = 60.0
 
 SHORT_NAMES = {
     "Вінницька область": "Вінниця",
@@ -44,6 +49,9 @@ SHORT_NAMES = {
 
 
 async def _get_raw_data() -> dict | None:
+    global _cache_data, _cache_ts
+    if time.monotonic() - _cache_ts < _CACHE_TTL:
+        return _cache_data
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -54,7 +62,9 @@ async def _get_raw_data() -> dict | None:
                 if resp.status != 200:
                     logger.warning("Alerts API returned status %d", resp.status)
                     return None
-                return await resp.json(content_type=None)
+                _cache_data = await resp.json(content_type=None)
+                _cache_ts = time.monotonic()
+                return _cache_data
     except Exception as e:
         logger.warning("Alerts API fetch failed: %s", e)
         return None
