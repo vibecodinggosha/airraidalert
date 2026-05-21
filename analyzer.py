@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import anthropic
@@ -22,6 +22,97 @@ FORECAST_FILE = "last_forecast.json"
 _RETRYABLE = (anthropic.InternalServerError, anthropic.APIStatusError)
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 2.0
+
+# Channel priority tiers: 3=official, 2=specialist, 1=regional
+_CHANNEL_TIER: dict[str, int] = {
+    "kpszsu": 3, "DIUkraine": 3, "Ukrainian_Intelligence": 3,
+    "raketna_neb": 2, "kudy_letyt": 2, "avimonitor": 2,
+    "eRadarrua": 2, "war_monitor": 2, "radar_raketaa": 2,
+    "war_raketaua": 2, "mon1tor_ua": 2, "strategic_review": 2,
+    "strategicontrol": 2, "vanek_nikolaev": 2, "bayraktarmedia": 2,
+    "povitryanatrivogaaa": 2,
+}
+
+_MAX_MSGS_TO_CLAUDE = 120
+_DEDUP_WINDOW_MIN = 20
+_DEDUP_MIN_COMMON = 3
+
+_FINGERPRINT_KW = [
+    "ракет", "дрон", "бпла", "шахед", "тривог", "удар", "атак",
+    "пуск", "зліт", "ту-95", "ту-160", "міг-31", "кінджал",
+    "балістич", "крилат", "пво", "збито", "перехоп", "вибух",
+    "харків", "київ", "дніпр", "запоріж", "одес", "суми",
+    "херсон", "миколаїв", "львів", "чернігів", "полтав",
+]
+
+
+def _fingerprint(text: str) -> frozenset:
+    t = text.lower()
+    return frozenset(kw for kw in _FINGERPRINT_KW if kw in t)
+
+
+def preprocess_messages(messages: list[dict]) -> list[dict]:
+    """Deduplicate cross-channel reports of same event, prioritize by tier, cap at 120."""
+    if not messages:
+        return messages
+
+    sorted_msgs = sorted(messages, key=lambda m: m["date"])
+
+    def tier(m: dict) -> int:
+        return _CHANNEL_TIER.get(m["channel"], 1)
+
+    result: list[dict] = []
+    window: list[tuple[datetime, frozenset, dict]] = []
+
+    for msg in sorted_msgs:
+        try:
+            dt = datetime.fromisoformat(msg["date"])
+        except Exception:
+            result.append(msg)
+            continue
+
+        fp = _fingerprint(msg["text"])
+        cutoff = dt - timedelta(minutes=_DEDUP_WINDOW_MIN)
+        window = [(d, f, m) for d, f, m in window if d >= cutoff]
+
+        if len(fp) < 2:
+            result.append(msg)
+            window.append((dt, fp, msg))
+            continue
+
+        dup_entry = next(
+            ((d, f, m) for d, f, m in window if len(fp & f) >= _DEDUP_MIN_COMMON),
+            None,
+        )
+        if dup_entry:
+            _, _, dup_msg = dup_entry
+            if tier(msg) > tier(dup_msg):
+                result = [m for m in result if m is not dup_msg]
+                window = [(d, f, m) for d, f, m in window if m is not dup_msg]
+                result.append(msg)
+                window.append((dt, fp, msg))
+        else:
+            result.append(msg)
+            window.append((dt, fp, msg))
+
+    if len(result) > _MAX_MSGS_TO_CLAUDE:
+        try:
+            max_dt = max(datetime.fromisoformat(m["date"]) for m in result)
+        except Exception:
+            max_dt = datetime.now()
+
+        def score(m: dict) -> float:
+            try:
+                age_h = (max_dt - datetime.fromisoformat(m["date"])).total_seconds() / 3600
+            except Exception:
+                age_h = 10.0
+            return tier(m) * 2 + max(0.0, 1.0 - age_h / 20.0)
+
+        result = sorted(result, key=score, reverse=True)[:_MAX_MSGS_TO_CLAUDE]
+        result = sorted(result, key=lambda m: m["date"])
+
+    logger.info("Preprocessed %d→%d messages", len(messages), len(result))
+    return result
 
 
 async def _create_with_retry(client: anthropic.AsyncAnthropic, **kwargs) -> anthropic.types.Message:
@@ -102,6 +193,21 @@ BACKGROUND_KNOWLEDGE = """
 ЧАСТОТА:
 - РФ намагається перейти до системної кампанії: до 7 масованих атак на місяць
 - Після піку завжди приходить спад (за кількома видами озброєння по черзі)
+
+КАЛІБРУВАННЯ ПРОГНОЗІВ — БАЗОВІ СТАВКИ (суворо дотримуватись):
+- Помірна атака 84-200 БПЛА: майже щодня — це НЕ масований удар
+- Масований дроновий удар 300+ БПЛА: ~2-3 рази/тиждень у пікові місяці
+- Масований комбінований удар 300+ БПЛА + ракети: ~3-4 рази/місяць
+- Без підтверджених сигналів — базова ймовірність 25-35%
+- З підтвердженим зльотом Ту-95МС + накопичення БПЛА: не більше 70%
+- З підтвердженим зльотом і активними бойовими частотами: не більше 80%
+- НІКОЛИ не встановлюй > 85% без кількох одночасних незалежних сигналів
+
+ТИПОВІ ПОМИЛКИ ЗАВИЩЕННЯ (уникати):
+- Ядерні навчання РФ = загальна напруга, НЕ прямий сигнал удару — +5% максимум
+- Переміщення авіації між базами (Енгельс→Оленя) = ротація, НЕ підготовка до удару
+- Багато каналів про одну подію ≠ кілька незалежних подій — це одна подія
+- Балістична загроза знята = загрози не було, не підвищує ймовірність
 """
 
 SYSTEM_PROMPT = """Ти — військовий аналітик загроз повітряних ударів по Україні. Пишеш як оперативний аналітик — тільки факти, цифри, конкретика. Нуль води.
@@ -219,6 +325,7 @@ def load_forecast() -> Optional[dict]:
 async def analyze_shelling_risk(messages: list[dict]) -> dict:
     client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
     now_kyiv = datetime.now(KYIV_TZ)
+    messages = preprocess_messages(messages)
     messages_block = _build_messages_block(messages)
     user_content = (
         f"Дата та час аналізу (Київ): {now_kyiv.strftime('%d.%m.%Y %H:%M')}\n"
